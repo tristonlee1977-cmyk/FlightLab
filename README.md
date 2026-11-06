@@ -1,5 +1,11 @@
 # FlightLab
-Three local Python experiments on how a ground station handles misleading readings. Start by watching [the 10-second comparison](comparison.mp4). The sender, interceptor and receiver run in one process with separate packet-handling steps.
+Three local Python experiments on how a ground station handles misleading readings. 
+
+![Animated ground-station comparison: plain JSON plots a forged position while AES-GCM rejects the edited packets.](comparison.gif)
+
+During frames 26–39, an interceptor changes one longitude digit. Watch the plain receiver draw the false track while the authenticated receiver leaves a gap. [Open the MP4](comparison.mp4).
+
+The sender, interceptor and receiver run in one process with separate packet-handling steps.
 
 ## Run on Windows
 Install Python 3.12, unzip the folder and open a terminal inside FlightLab.
