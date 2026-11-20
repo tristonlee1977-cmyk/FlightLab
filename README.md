@@ -1,14 +1,49 @@
 # FlightLab
-Three local Python experiments on how a ground station handles misleading readings. 
 
-![Animated ground-station comparison: plain JSON plots a forged position while AES-GCM rejects the edited packets.](comparison.gif)
+FlightLab is a Python project I put together to explore a question I had about drones: what happens if the information sent to a ground station is wrong or has been changed?
 
-During frames 26–39, an interceptor changes one longitude digit. Watch the plain receiver draw the false track while the authenticated receiver leaves a gap. [Open the MP4](comparison.mp4).
+I made three small experiments. They use simulated data or a public sample log, **not a real drone**. This is a learning project, not flight-ready security software.
 
-The sender, interceptor and receiver run in one process with separate packet-handling steps.
+![Comparison of normal GPS data and edited data](comparison.gif)
 
-## Run on Windows
-Install Python 3.12, unzip the folder and open a terminal inside FlightLab.
+## What I tried
+
+### 1. Changing GPS data (`telemetry.py`)
+
+I simulated a drone sending its location, altitude, speed and battery level. Then I changed part of the GPS data while it was being sent.
+
+The program compares two receivers:
+- A basic receiver that reads the JSON data without checking whether it was changed.
+- A receiver using AES-GCM authentication, which rejects the edited message.
+
+The animation shows the difference. The edited position appears on the basic receiver, but the authenticated receiver rejects that packet.
+
+One thing I learned is that checking the integrity of a message matters, even if the data itself looks normal. This doesn't solve every GPS security problem, especially if incorrect data enters the system before encryption.
+
+### 2. Testing a small packet parser (`fuzzer.py`)
+
+I made a simple three-byte format for altitude readings and compared two versions of a parser.
+
+The first version assumes the input is correct. The second checks the packet length, identifier and altitude range before accepting it.
+
+I generated test inputs including missing bytes, extra bytes and invalid values. The results are in [fuzz-report.md](fuzz-report.md).
+
+This helped me understand why validating input is important. A program shouldn't assume every message it receives is valid.
+
+### 3. Finding unusual movement (`anomaly.py`)
+
+For this experiment, I used a short public DJI-format sample log and added a small artificial change to part of the GPS readings.
+
+I used Python and Isolation Forest to flag unusual frame-to-frame movement.
+
+![GPS anomaly detection result](anomalies.png)
+
+I originally tried using absolute positions, but that flagged too many normal frames. Comparing changes between frames worked better on this sample. That doesn't mean it would work on every flight, so I'd want to test it on more data.
+
+## How to run it
+
+I tested the project with Python 3.12. On Windows, open a terminal in the project folder and run:
+
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
@@ -16,27 +51,24 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python fuzzer.py
 .\.venv\Scripts\python anomaly.py
 ```
-Close the plot window to stop the live stream. To regenerate the movie, install FFmpeg on PATH and run telemetry.py with --video.
 
-## 1 · Trusting a position
-The left receiver parses plain JSON. During frames 26–39 the interceptor alters a digit of longitude. The plotted position shifts. On the right, AES-GCM authenticates every encrypted reading. The same byte flip fails verification and leaves a gap in the accepted track. A fresh random 128-bit key starts each run and the increasing packet number provides a unique nonce under that key. The receiver authenticates before checking its sequence high-water mark. This strict ordering also drops delayed packets. The simulation measures ground-station display integrity. Flight controls, radio interference, key provisioning and sensor-side GPS spoofing are outside this experiment.
+The first script opens a live graph. Close the graph window to stop it. The other scripts generate a test report and a chart.
 
-## 2 · Breaking a parser
-The miniature three-byte altitude protocol makes parser behavior easy to inspect. The legacy parser accepts any magic byte and altitude, and unpacking a short or long packet raises an exception. The patch checks length, magic byte and range before returning a reading. Compare both on exactly the same inputs in [the generated report](fuzz-report.md). No actual aircraft network is involved.
+## Tools I used
 
-## 3 · Detecting suspicious motion
-![Held-out log with injected drift and model flags](anomalies.png)
+- Python
+- Matplotlib and NumPy for data and graphs
+- `cryptography` for AES-GCM
+- scikit-learn for Isolation Forest
 
-The first 180 frames train the Isolation Forest. The final 120 provide a chronological test. We treat the original excerpt as the reference and insert a known eastward drift in 25 test frames. The plot marks this interval in tan and model flags in red. The model sees absolute frame-to-frame changes in east position, north position and altitude. These features suit a short, mostly stationary excerpt. The first difference within each segment is set to zero.
+## What I'd improve next
 
-| Feature choice | Drift frames flagged / 25 | Other frames flagged / 95 |
-|---|---:|---:|
-| Initial baseline with absolute position | 25 | 95 |
-| Frame-to-frame changes | 25 | 3 |
+- Add automated tests for the GPS receiver and packet parser.
+- Try different GPS changes to see when the anomaly detector misses them.
+- Make a small web dashboard so someone can view the results in a browser.
 
-The baseline flagged ordinary movement to a new location. We revised the features after inspecting this result, so the second row is exploratory. An unseen flight would give a better measure of generalization. Labels describe only the injected changes. The experiment cannot assign a cause to an unknown anomaly.
+I used AI assistance while building and documenting parts of this project. I'm continuing to study the code and test changes myself so I can explain how each part works.
 
-Data: 300 consecutive frames (first 2,400 lines) of the [public DJI-format SRT sample at a pinned commit](https://github.com/7amzaGH/UAV-SAR-Human-Detection-and-Geolocation/blob/3ca4b5ce1586e46d1d6de7d1da15efb9daa04fc8/data/Demo_15m90d_Data.srt). log.csv contains latitude, longitude, heading and relative altitude in source order. Values are as published. Independent verification of the recording is outside this exercise.
+## Data credit
 
-## Make it your experiment
-Predict what happens when an attacker slowly changes a GPS reading before it is encrypted. Try a smaller drift and save the new confusion counts. Record your prediction, your code change and one result that surprised you before using the project in an application.
+The sample used for the anomaly experiment comes from this [public DJI-format SRT file](https://github.com/7amzaGH/UAV-SAR-Human-Detection-and-Geolocation/blob/3ca4b5ce1586e46d1d6de7d1da15efb9daa04fc8/data/Demo_15m90d_Data.srt). The GPS changes in my experiment are simulated.
